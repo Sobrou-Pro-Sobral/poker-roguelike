@@ -6,7 +6,7 @@ void main() {
     await tester.pumpWidget(const PokerRogueApp());
 
     expect(find.text('POKER\nROGUELIKE'), findsOneWidget);
-    expect(find.text('Nova partida'), findsOneWidget);
+    expect(find.text('Nova run'), findsOneWidget);
     expect(find.text('Como funciona'), findsOneWidget);
   });
 }

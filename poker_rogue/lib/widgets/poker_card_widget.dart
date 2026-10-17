@@ -20,64 +20,109 @@ class PokerCardWidget extends StatelessWidget {
     final height = compact ? 64.0 : 82.0;
     final color = card?.isRed ?? false ? const Color(0xFFE51B2B) : Colors.black;
 
-    return Container(
+    return SizedBox(
       width: width,
       height: height,
-      decoration: BoxDecoration(
-        color: hidden ? const Color(0xFF111111) : Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: hidden ? const Color(0xFFE51B2B) : color,
-          width: 1.2,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: hidden ? const Color(0xFF111111) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: hidden ? const Color(0xFFE51B2B) : color,
+            width: 1.2,
+          ),
         ),
-      ),
-      child: hidden || card == null
-          ? Center(
-              child: Container(
-                width: width * 0.45,
-                height: height * 0.45,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.white, width: 1.4),
-                  borderRadius: BorderRadius.circular(20),
+        child: hidden || card == null
+            ? Center(
+                child: Container(
+                  width: width * .42,
+                  height: height * .42,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.white, width: 1.4),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                 ),
-              ),
-            )
-          : Padding(
-              padding: const EdgeInsets.all(6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              )
+            : Stack(
                 children: [
-                  Text(
-                    card!.shortValue,
-                    style: TextStyle(
+                  Positioned(
+                    left: 5,
+                    top: 5,
+                    child: _CornerMark(
+                      value: card!.shortValue,
+                      suit: card!.suitSymbol,
                       color: color,
-                      fontWeight: FontWeight.w800,
-                      fontSize: compact ? 13 : 15,
+                      compact: compact,
                     ),
                   ),
-                  Text(
-                    card!.suitSymbol,
-                    style: TextStyle(
-                      color: color,
-                      fontWeight: FontWeight.w800,
-                      fontSize: compact ? 15 : 18,
-                    ),
-                  ),
-                  const Spacer(),
-                  Align(
-                    alignment: Alignment.bottomRight,
+                  Center(
                     child: Text(
                       card!.suitSymbol,
                       style: TextStyle(
                         color: color,
-                        fontWeight: FontWeight.w800,
-                        fontSize: compact ? 20 : 26,
+                        fontWeight: FontWeight.w400,
+                        fontSize: compact ? 27 : 36,
+                        height: .9,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 5,
+                    bottom: 5,
+                    child: Transform.rotate(
+                      angle: 3.1415926535,
+                      child: _CornerMark(
+                        value: card!.shortValue,
+                        suit: card!.suitSymbol,
+                        color: color,
+                        compact: compact,
                       ),
                     ),
                   ),
                 ],
               ),
-            ),
+      ),
+    );
+  }
+}
+
+class _CornerMark extends StatelessWidget {
+  const _CornerMark({
+    required this.value,
+    required this.suit,
+    required this.color,
+    required this.compact,
+  });
+
+  final String value;
+  final String suit;
+  final Color color;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w800,
+            fontSize: compact ? 12 : 14,
+            height: 1,
+          ),
+        ),
+        Text(
+          suit,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w700,
+            fontSize: compact ? 11 : 13,
+            height: 1,
+          ),
+        ),
+      ],
     );
   }
 }

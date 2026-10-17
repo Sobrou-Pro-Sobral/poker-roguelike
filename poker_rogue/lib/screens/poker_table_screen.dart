@@ -27,6 +27,16 @@ class _PokerTableScreenState extends State<PokerTableScreen> {
 
   GameState get game => widget.game;
 
+  Future<void> _pass() async {
+    await _advanceRound();
+  }
+
+  Future<void> _bet() async {
+    if (!game.canBet) return;
+    game.placeBet();
+    await _advanceRound();
+  }
+
   Future<void> _advanceRound() async {
     if (game.round == PokerRound.river) {
       _showdown();
@@ -42,10 +52,10 @@ class _PokerTableScreenState extends State<PokerTableScreen> {
       final drawCount = game.round == PokerRound.preFlop ? 3 : 1;
       final draw = await widget.deckApi.drawCards(game.deckId, drawCount);
 
+      if (!mounted) return;
       setState(() {
         game.communityCards.addAll(draw.cards);
         game.remainingCards = draw.remaining;
-        game.pot += drawCount == 3 ? 12 : 24;
         game.round = switch (game.round) {
           PokerRound.preFlop => PokerRound.flop,
           PokerRound.flop => PokerRound.turn,
@@ -55,33 +65,28 @@ class _PokerTableScreenState extends State<PokerTableScreen> {
         };
       });
     } catch (error) {
-      setState(() {
-        _error = error.toString();
-      });
+      if (mounted) setState(() => _error = error.toString());
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _fold() {
-    game.opponentRevealed = true;
-    Navigator.of(context).pushReplacement(
+    game.settle(folded: true);
+    Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ShowdownScreen(game: game, folded: true),
+        builder: (_) => ShowdownScreen(game: game, deckApi: widget.deckApi),
       ),
     );
   }
 
   void _showdown() {
     game.round = PokerRound.showdown;
-    game.opponentRevealed = true;
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => ShowdownScreen(game: game)));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ShowdownScreen(game: game, deckApi: widget.deckApi),
+      ),
+    );
   }
 
   @override
@@ -94,23 +99,26 @@ class _PokerTableScreenState extends State<PokerTableScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _Header(game: game),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
+              if (game.isBoss) _BossBanner(game: game),
+              const SizedBox(height: 12),
               _Stats(game: game),
               if (_error != null) ...[
                 const SizedBox(height: 10),
                 _ErrorBox(message: _error!, onRetry: _advanceRound),
               ],
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               _OpponentArea(game: game),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Expanded(child: _CommunityArea(cards: game.communityCards)),
+              const SizedBox(height: 10),
+              _PlayerArea(cards: game.player.hand, stack: game.player.stack),
               const SizedBox(height: 12),
-              _PlayerArea(cards: game.player.hand),
-              const SizedBox(height: 14),
               _Actions(
                 game: game,
                 isLoading: _isLoading,
-                onAdvance: _advanceRound,
+                onBet: _bet,
+                onPass: _pass,
                 onFold: _fold,
               ),
             ],
@@ -130,9 +138,9 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Text(
-          'Rodada 01',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+        Text(
+          'Mesa ${game.run.currentTable} / 5',
+          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
         ),
         const Spacer(),
         Text(
@@ -143,6 +151,33 @@ class _Header extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _BossBanner extends StatelessWidget {
+  const _BossBanner({required this.game});
+
+  final GameState game;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFEEF0),
+        border: Border.all(color: const Color(0xFFE51B2B)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        'BOSS · ${game.bossName}\n${game.bossRule}',
+        style: const TextStyle(
+          color: Color(0xFFE51B2B),
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+        ),
+      ),
     );
   }
 }
@@ -177,7 +212,7 @@ class _StatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           border: Border.all(color: Colors.black12),
           borderRadius: BorderRadius.circular(8),
@@ -217,11 +252,15 @@ class _OpponentArea extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Text(
-          'Rival - 120 fichas',
-          style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w700),
+        Expanded(
+          child: Text(
+            '${game.opponent.name} · ${game.opponent.stack} fichas',
+            style: const TextStyle(
+              color: Colors.black54,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
-        const Spacer(),
         for (final card in game.opponent.hand) ...[
           PokerCardWidget(
             card: card,
@@ -279,21 +318,22 @@ class _CommunityArea extends StatelessWidget {
 }
 
 class _PlayerArea extends StatelessWidget {
-  const _PlayerArea({required this.cards});
+  const _PlayerArea({required this.cards, required this.stack});
 
   final List<PlayingCard> cards;
+  final int stack;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Column(
+        Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Você', style: TextStyle(fontWeight: FontWeight.w900)),
+            const Text('Você', style: TextStyle(fontWeight: FontWeight.w900)),
             Text(
-              'BTN',
-              style: TextStyle(
+              'BTN · $stack',
+              style: const TextStyle(
                 color: Color(0xFFE51B2B),
                 fontWeight: FontWeight.w900,
               ),
@@ -314,30 +354,30 @@ class _Actions extends StatelessWidget {
   const _Actions({
     required this.game,
     required this.isLoading,
-    required this.onAdvance,
+    required this.onBet,
+    required this.onPass,
     required this.onFold,
   });
 
   final GameState game;
   final bool isLoading;
-  final VoidCallback onAdvance;
+  final VoidCallback onBet;
+  final VoidCallback onPass;
   final VoidCallback onFold;
 
   @override
   Widget build(BuildContext context) {
-    final primaryLabel = switch (game.round) {
-      PokerRound.preFlop => 'Apostar 6',
-      PokerRound.flop => 'Apostar 12',
-      PokerRound.turn => 'Apostar 24',
-      PokerRound.river => 'Confronto',
-      PokerRound.showdown => 'Continuar',
-    };
+    final betLabel = isLoading
+        ? 'Comprando...'
+        : game.canBet
+        ? 'Apostar ${game.betAmount}'
+        : 'Aposta indisponível';
 
     return Column(
       children: [
         ActionButton(
-          label: isLoading ? 'Comprando...' : primaryLabel,
-          onPressed: isLoading ? null : onAdvance,
+          label: betLabel,
+          onPressed: isLoading || !game.canBet ? null : onBet,
           primary: true,
         ),
         const SizedBox(height: 8),
@@ -346,7 +386,7 @@ class _Actions extends StatelessWidget {
             Expanded(
               child: ActionButton(
                 label: 'Passar',
-                onPressed: isLoading ? null : onAdvance,
+                onPressed: isLoading ? null : onPass,
               ),
             ),
             const SizedBox(width: 8),

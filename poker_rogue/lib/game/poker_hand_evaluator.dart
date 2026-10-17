@@ -149,6 +149,13 @@ class PokerHandEvaluator {
 
   int? _straightHigh(List<int> ranks) {
     final unique = ranks.toSet().toList()..sort((a, b) => b.compareTo(a));
+    if (unique.contains(14) &&
+        unique.contains(5) &&
+        unique.contains(4) &&
+        unique.contains(3) &&
+        unique.contains(2)) {
+      return 5;
+    }
     if (unique.contains(14)) {
       unique.add(1);
     }

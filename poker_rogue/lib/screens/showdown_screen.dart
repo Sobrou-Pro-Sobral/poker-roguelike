@@ -3,100 +3,183 @@ import 'package:flutter/material.dart';
 import '../game/poker_hand_evaluator.dart';
 import '../models/game_state.dart';
 import '../models/playing_card.dart';
+import '../models/run_state.dart';
+import '../services/deck_api_service.dart';
+import '../services/game_flow.dart';
 import '../widgets/action_button.dart';
 import '../widgets/poker_card_widget.dart';
+import 'poker_table_screen.dart';
+import 'run_flow_screen.dart';
 
-class ShowdownScreen extends StatelessWidget {
-  ShowdownScreen({super.key, required this.game, this.folded = false});
+class ShowdownScreen extends StatefulWidget {
+  const ShowdownScreen({
+    super.key,
+    required this.game,
+    required this.deckApi,
+    this.folded = false,
+  });
 
   final GameState game;
+  final DeckApiService deckApi;
   final bool folded;
-  final PokerHandEvaluator _evaluator = PokerHandEvaluator();
+
+  @override
+  State<ShowdownScreen> createState() => _ShowdownScreenState();
+}
+
+class _ShowdownScreenState extends State<ShowdownScreen> {
+  late final PokerHandResult _playerResult;
+  late final PokerHandResult _opponentResult;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.game.settle(folded: widget.folded);
+    final evaluator = PokerHandEvaluator();
+    _playerResult = evaluator.evaluate([
+      ...widget.game.player.hand,
+      ...widget.game.communityCards,
+    ]);
+    _opponentResult = evaluator.evaluate([
+      ...widget.game.opponent.hand,
+      ...widget.game.communityCards,
+    ]);
+  }
+
+  void _continue() {
+    final run = widget.game.run;
+    if (run.isVictory || run.isDefeat) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => RunResultScreen(run: run)),
+      );
+      return;
+    }
+
+    final upgrades = run.availableUpgrades;
+    if (upgrades.isNotEmpty) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => RewardScreen(
+            game: widget.game,
+            deckApi: widget.deckApi,
+          ),
+        ),
+      );
+      return;
+    }
+
+    run.moveToNextTable();
+    _openNextTable();
+  }
+
+  Future<void> _openNextTable() async {
+    try {
+      final run = widget.game.run;
+      final nextGame = await _createNextGame(run);
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => PokerTableScreen(
+            game: nextGame,
+            deckApi: widget.deckApi,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível iniciar a próxima mesa: $error')),
+      );
+    }
+  }
+
+  Future<GameState> _createNextGame(RunState run) {
+    // Importação local mantida aqui para deixar o fluxo da tela fácil de seguir.
+    return createTableGame(run: run, deckApi: widget.deckApi);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final playerResult = _evaluator.evaluate([
-      ...game.player.hand,
-      ...game.communityCards,
-    ]);
-    final opponentResult = _evaluator.evaluate([
-      ...game.opponent.hand,
-      ...game.communityCards,
-    ]);
-    final comparison = playerResult.compareTo(opponentResult);
-    final title = folded
-        ? 'Você desistiu'
-        : comparison > 0
-        ? 'Você venceu'
-        : comparison < 0
-        ? 'Rival venceu'
-        : 'Empate';
-
+    final game = widget.game;
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'CONFRONTO',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.5,
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'CONFRONTO',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      game.resultMessage ?? 'Resultado',
+                      style: const TextStyle(
+                        fontSize: 34,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      game.isTie
+                          ? 'Pote dividido: ${game.payout} para você.'
+                          : game.playerWon == true
+                          ? 'Pote recebido: ${game.payout}'
+                          : 'O rival leva o pote.',
+                      style: const TextStyle(
+                        color: Color(0xFFE51B2B),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    _HandSummary(
+                      label: 'Sua mão',
+                      result: _playerResult.name,
+                      cards: game.player.hand,
+                    ),
+                    const SizedBox(height: 14),
+                    _HandSummary(
+                      label: 'Mão do rival',
+                      result: _opponentResult.name,
+                      cards: game.opponent.hand,
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Cartas comunitárias',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final card in game.communityCards)
+                          PokerCardWidget(card: card, compact: true),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 28),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 34,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                folded ? 'O rival leva o pote.' : 'Pote: ${game.pot}',
-                style: const TextStyle(
-                  color: Color(0xFFE51B2B),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 28),
-              _HandSummary(
-                label: 'Sua mão',
-                result: playerResult.name,
-                cards: game.player.hand,
-              ),
-              const SizedBox(height: 18),
-              _HandSummary(
-                label: 'Mão do rival',
-                result: opponentResult.name,
-                cards: game.opponent.hand,
-              ),
-              const SizedBox(height: 18),
-              const Text(
-                'Cartas comunitárias',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final card in game.communityCards)
-                    PokerCardWidget(card: card, compact: true),
-                ],
-              ),
-              const Spacer(),
-              ActionButton(
-                label: 'Continuar',
-                onPressed: () =>
-                    Navigator.of(context).popUntil((route) => route.isFirst),
+            ),
+            SafeArea(
+              top: false,
+              minimum: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+              child: ActionButton(
+                label: game.run.isVictory || game.run.isDefeat
+                    ? 'Ver resultado final'
+                    : 'Continuar',
+                onPressed: _continue,
                 primary: true,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

@@ -32,7 +32,7 @@ class DeckApiService {
       cards: (data['cards'] as List)
           .map((card) => PlayingCard.fromJson(card as Map<String, dynamic>))
           .toList(),
-      remaining: data['remaining'] as int,
+      remaining: int.parse(data['remaining'].toString()),
     );
   }
 
