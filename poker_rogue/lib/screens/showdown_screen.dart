@@ -55,28 +55,55 @@ class _ShowdownScreenState extends State<ShowdownScreen> {
       return;
     }
 
-    final upgrades = run.availableUpgrades;
-    if (upgrades.isNotEmpty) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => RewardScreen(
-            game: widget.game,
-            deckApi: widget.deckApi,
+    if (widget.game.rewardEligible &&
+        run.canClaimRewardFor(run.currentTable)) {
+      if (run.availableUpgrades.isNotEmpty) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => RewardScreen(
+              game: widget.game,
+              deckApi: widget.deckApi,
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        _openNextTableAfterWin();
+      }
       return;
     }
 
-    run.moveToNextTable();
-    _openNextTable();
+    _retryCurrentTable();
   }
 
-  Future<void> _openNextTable() async {
+  Future<void> _retryCurrentTable() async {
     try {
       final run = widget.game.run;
       final nextGame = await _createNextGame(run);
       if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => PokerTableScreen(
+            game: nextGame,
+            deckApi: widget.deckApi,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível repetir a mesa: $error')),
+      );
+    }
+  }
+
+  Future<void> _openNextTableAfterWin() async {
+    final run = widget.game.run;
+    final candidate = run.copy();
+    if (!candidate.markRewardClaimed() || !candidate.moveToNextTable()) return;
+    try {
+      final nextGame = await _createNextGame(candidate);
+      if (!mounted) return;
+      run.copyFrom(candidate);
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => PokerTableScreen(
@@ -141,14 +168,19 @@ class _ShowdownScreenState extends State<ShowdownScreen> {
                     const SizedBox(height: 22),
                     _HandSummary(
                       label: 'Sua mão',
-                      result: _playerResult.name,
+                      result: game.wasFolded
+                          ? 'Mão encerrada por fold'
+                          : _playerResult.name,
                       cards: game.player.hand,
                     ),
                     const SizedBox(height: 14),
                     _HandSummary(
                       label: 'Mão do rival',
-                      result: _opponentResult.name,
+                      result: game.wasFolded
+                          ? 'Mão não revelada'
+                          : _opponentResult.name,
                       cards: game.opponent.hand,
+                      hidden: game.wasFolded,
                     ),
                     const SizedBox(height: 18),
                     const Text(
@@ -191,11 +223,13 @@ class _HandSummary extends StatelessWidget {
     required this.label,
     required this.result,
     required this.cards,
+    this.hidden = false,
   });
 
   final String label;
   final String result;
   final List<PlayingCard> cards;
+  final bool hidden;
 
   @override
   Widget build(BuildContext context) {
@@ -226,7 +260,11 @@ class _HandSummary extends StatelessWidget {
             spacing: 8,
             children: [
               for (final card in cards)
-                PokerCardWidget(card: card, compact: true),
+                PokerCardWidget(
+                  card: card,
+                  hidden: hidden,
+                  compact: true,
+                ),
             ],
           ),
         ],

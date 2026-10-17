@@ -22,17 +22,30 @@ class _RewardScreenState extends State<RewardScreen> {
   String? _error;
 
   Future<void> _choose(Upgrade upgrade) async {
+    if (_loading || !widget.game.rewardEligible) return;
     final run = widget.game.run;
-    run.acquire(upgrade);
-    run.moveToNextTable();
+    if (!run.canClaimRewardFor(run.currentTable)) return;
+
+    // Prepara uma cópia. A run original só é confirmada depois que a API
+    // criar o baralho e distribuir as cartas da próxima mesa.
+    final candidate = run.copy();
+    if (!candidate.acquire(upgrade) ||
+        !candidate.markRewardClaimed() ||
+        !candidate.moveToNextTable()) {
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
-      final nextGame = await createTableGame(run: run, deckApi: widget.deckApi);
+      final nextGame = await createTableGame(
+        run: candidate,
+        deckApi: widget.deckApi,
+      );
       if (!mounted) return;
+      run.copyFrom(candidate);
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => PokerTableScreen(

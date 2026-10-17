@@ -24,6 +24,8 @@ extension UpgradeDetails on Upgrade {
 class RunState {
   RunState({this.playerChips = 120});
 
+  static const int maxTables = 5;
+
   int currentTable = 1;
   int playerChips;
   final Set<Upgrade> upgrades = <Upgrade>{};
@@ -31,19 +33,61 @@ class RunState {
   bool insuranceUsed = false;
   bool isVictory = false;
   bool isDefeat = false;
+  int? rewardedTable;
 
   bool get isBoss => currentTable == 3 || currentTable == 5;
-  bool get isFinalTable => currentTable == 5;
+  bool get isFinalTable => currentTable == maxTables;
+  bool get isTerminal => isVictory || isDefeat;
 
   bool has(Upgrade upgrade) => upgrades.contains(upgrade);
 
-  void acquire(Upgrade upgrade) => upgrades.add(upgrade);
+  bool acquire(Upgrade upgrade) {
+    if (isTerminal || upgrades.contains(upgrade)) return false;
+    upgrades.add(upgrade);
+    return true;
+  }
 
   List<Upgrade> get availableUpgrades => Upgrade.values
       .where((upgrade) => !upgrades.contains(upgrade))
       .toList(growable: false);
 
-  void moveToNextTable() {
+  bool canClaimRewardFor(int table) =>
+      table == currentTable && !isTerminal && rewardedTable != table;
+
+  bool markRewardClaimed() {
+    if (!canClaimRewardFor(currentTable)) return false;
+    rewardedTable = currentTable;
+    return true;
+  }
+
+  bool moveToNextTable() {
+    if (isTerminal || currentTable >= maxTables) return false;
     currentTable += 1;
+    return true;
+  }
+
+  RunState copy() {
+    final result = RunState(playerChips: playerChips)
+      ..currentTable = currentTable
+      ..winStreak = winStreak
+      ..insuranceUsed = insuranceUsed
+      ..isVictory = isVictory
+      ..isDefeat = isDefeat
+      ..rewardedTable = rewardedTable;
+    result.upgrades.addAll(upgrades);
+    return result;
+  }
+
+  void copyFrom(RunState other) {
+    currentTable = other.currentTable;
+    playerChips = other.playerChips;
+    upgrades
+      ..clear()
+      ..addAll(other.upgrades);
+    winStreak = other.winStreak;
+    insuranceUsed = other.insuranceUsed;
+    isVictory = other.isVictory;
+    isDefeat = other.isDefeat;
+    rewardedTable = other.rewardedTable;
   }
 }

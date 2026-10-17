@@ -82,6 +82,36 @@ void main() {
         6,
       );
     });
+
+    test('reconhece as nove categorias e escolhe a sequência superior', () {
+      expect(evaluator.evaluate([c('A', 'S'), c('K', 'D'), c('9', 'C'), c('7', 'H'), c('3', 'S')]).category, 0);
+      expect(evaluator.evaluate([c('A', 'S'), c('A', 'H'), c('9', 'C'), c('7', 'H'), c('3', 'S')]).category, 1);
+      expect(evaluator.evaluate([c('A', 'S'), c('A', 'H'), c('9', 'C'), c('9', 'H'), c('3', 'S')]).category, 2);
+      expect(evaluator.evaluate([c('A', 'S'), c('A', 'H'), c('A', 'D'), c('9', 'H'), c('3', 'S')]).category, 3);
+      expect(evaluator.evaluate([c('A', 'S'), c('2', 'H'), c('3', 'D'), c('4', 'C'), c('5', 'S')]).category, 4);
+      expect(evaluator.evaluate([c('A', 'H'), c('9', 'H'), c('7', 'H'), c('4', 'H'), c('2', 'H')]).category, 5);
+      expect(evaluator.evaluate([c('A', 'S'), c('A', 'H'), c('A', 'D'), c('K', 'S'), c('K', 'H')]).category, 6);
+      expect(evaluator.evaluate([c('A', 'S'), c('A', 'H'), c('A', 'D'), c('A', 'C'), c('K', 'H')]).category, 7);
+      expect(evaluator.evaluate([c('9', 'S'), c('8', 'S'), c('7', 'S'), c('6', 'S'), c('5', 'S')]).category, 8);
+
+      final sevenCardSequence = evaluator.evaluate([
+        c('A', 'S'), c('2', 'H'), c('3', 'D'), c('4', 'C'),
+        c('5', 'S'), c('6', 'H'), c('7', 'D'),
+      ]);
+      expect(sevenCardSequence.category, 4);
+      expect(sevenCardSequence.tiebreakers, [7]);
+    });
+
+    test('compara kickers, flushes e empate real', () {
+      final aceKicker = evaluator.evaluate([
+        c('K', 'S'), c('K', 'H'), c('A', 'D'), c('9', 'C'), c('3', 'S'),
+      ]);
+      final queenKicker = evaluator.evaluate([
+        c('K', 'S'), c('K', 'H'), c('Q', 'D'), c('9', 'C'), c('3', 'S'),
+      ]);
+      expect(aceKicker.compareTo(queenKicker), greaterThan(0));
+      expect(aceKicker.compareTo(aceKicker), 0);
+    });
   });
 
   test('paga o pote apenas uma vez', () {
@@ -142,6 +172,45 @@ void main() {
     );
 
     game.settle(folded: false);
-    expect(run.playerChips, 111);
+    expect(run.playerChips, 121);
+  });
+
+  test('bet, check, all-in e fold conservam as contribuições', () {
+    final run = RunState();
+    final game = GameState(
+      deckId: 'test',
+      player: Player(name: 'Você', stack: 94, hand: [c('A', 'S'), c('A', 'H')]),
+      opponent: Player(name: 'Rival', stack: 94, hand: [c('K', 'S'), c('Q', 'D')]),
+      communityCards: [],
+      pot: 12,
+      remainingCards: 48,
+      run: run,
+      initialContribution: 6,
+    );
+
+    expect(game.canCheck, isTrue);
+    expect(game.placeBet(), isTrue);
+    expect(game.player.stack, 88);
+    expect(game.opponent.stack, 88);
+    expect(game.pot, 24);
+    expect(game.playerContribution, 12);
+    expect(game.opponentContribution, 12);
+    expect(game.check(), isTrue);
+    game.settle(folded: true);
+    expect(game.resolved, isTrue);
+    expect(game.opponent.stack, 112);
+    expect(game.placeBet(), isFalse);
+  });
+
+  test('recompensa exige vitória e a run não chega à mesa 6', () {
+    final run = RunState();
+    expect(run.canClaimRewardFor(1), isTrue);
+    expect(run.markRewardClaimed(), isTrue);
+    expect(run.markRewardClaimed(), isFalse);
+    expect(run.moveToNextTable(), isTrue);
+    run.currentTable = RunState.maxTables;
+    expect(run.moveToNextTable(), isFalse);
+    run.isVictory = true;
+    expect(run.moveToNextTable(), isFalse);
   });
 }

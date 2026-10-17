@@ -13,77 +13,96 @@ class PokerHandResult implements Comparable<PokerHandResult> {
 
   @override
   int compareTo(PokerHandResult other) {
-    if (category != other.category) {
-      return category.compareTo(other.category);
-    }
-
-    for (
-      var i = 0;
-      i < tiebreakers.length && i < other.tiebreakers.length;
-      i++
-    ) {
+    if (category != other.category) return category.compareTo(other.category);
+    final length = tiebreakers.length < other.tiebreakers.length
+        ? tiebreakers.length
+        : other.tiebreakers.length;
+    for (var i = 0; i < length; i++) {
       if (tiebreakers[i] != other.tiebreakers[i]) {
         return tiebreakers[i].compareTo(other.tiebreakers[i]);
       }
     }
-
-    return 0;
+    return tiebreakers.length.compareTo(other.tiebreakers.length);
   }
 }
 
 class PokerHandEvaluator {
   PokerHandResult evaluate(List<PlayingCard> cards) {
-    final ranks = cards.map((card) => card.rank).toList()
-      ..sort((a, b) => b.compareTo(a));
-    final rankCounts = <int, int>{};
-    for (final rank in ranks) {
-      rankCounts[rank] = (rankCounts[rank] ?? 0) + 1;
+    if (cards.length <= 5) return _evaluateFive(cards);
+
+    PokerHandResult? best;
+    _forEachCombination(cards, 5, (combination) {
+      final result = _evaluateFive(combination);
+      if (best == null || result.compareTo(best!) > 0) best = result;
+    });
+    return best!;
+  }
+
+  void _forEachCombination(
+    List<PlayingCard> cards,
+    int size,
+    void Function(List<PlayingCard>) onCombination,
+  ) {
+    final selected = <PlayingCard>[];
+
+    void visit(int start) {
+      if (selected.length == size) {
+        onCombination(List<PlayingCard>.unmodifiable(selected));
+        return;
+      }
+      final needed = size - selected.length;
+      for (var i = start; i <= cards.length - needed; i++) {
+        selected.add(cards[i]);
+        visit(i + 1);
+        selected.removeLast();
+      }
     }
 
-    final flushCards = _flushCards(cards);
-    final straightHigh = _straightHigh(ranks);
-    final straightFlushHigh = flushCards == null
-        ? null
-        : _straightHigh(flushCards.map((card) => card.rank).toList());
+    visit(0);
+  }
 
-    if (straightFlushHigh != null) {
+  PokerHandResult _evaluateFive(List<PlayingCard> cards) {
+    final ranks = cards.map((card) => card.rank).toList()
+      ..sort((a, b) => b.compareTo(a));
+    final counts = <int, int>{};
+    for (final rank in ranks) {
+      counts[rank] = (counts[rank] ?? 0) + 1;
+    }
+
+    final flush = cards.length == 5 && cards.every((card) => card.suit == cards.first.suit);
+    final straightHigh = _straightHigh(ranks);
+    if (flush && straightHigh != null) {
       return PokerHandResult(
         name: 'Sequência de mesmo naipe',
         category: 8,
-        tiebreakers: [straightFlushHigh],
+        tiebreakers: [straightHigh],
       );
     }
 
-    final four = _ranksWithCount(rankCounts, 4);
-    if (four.isNotEmpty) {
+    final fours = _ranksWithCount(counts, 4);
+    if (fours.isNotEmpty) {
       return PokerHandResult(
         name: 'Quadra',
         category: 7,
-        tiebreakers: [
-          four.first,
-          _kickers(ranks, [four.first], 1).first,
-        ],
+        tiebreakers: [fours.first, ..._kickers(ranks, fours, 1)],
       );
     }
 
-    final triples = _ranksWithCount(rankCounts, 3);
-    final pairs = _ranksWithCount(rankCounts, 2);
-    if (triples.isNotEmpty && (pairs.isNotEmpty || triples.length > 1)) {
-      final second = triples.length > 1 ? triples[1] : pairs.first;
+    final triples = _ranksWithCount(counts, 3);
+    final pairs = _ranksWithCount(counts, 2);
+    if (triples.isNotEmpty && pairs.isNotEmpty) {
       return PokerHandResult(
         name: 'Casa cheia',
         category: 6,
-        tiebreakers: [triples.first, second],
+        tiebreakers: [triples.first, pairs.first],
       );
     }
 
-    if (flushCards != null) {
-      final flushRanks = flushCards.map((card) => card.rank).toList()
-        ..sort((a, b) => b.compareTo(a));
+    if (flush) {
       return PokerHandResult(
         name: 'Mesmo naipe',
         category: 5,
-        tiebreakers: flushRanks.take(5).toList(),
+        tiebreakers: ranks,
       );
     }
 
@@ -99,19 +118,15 @@ class PokerHandEvaluator {
       return PokerHandResult(
         name: 'Trinca',
         category: 3,
-        tiebreakers: [
-          triples.first,
-          ..._kickers(ranks, [triples.first], 2),
-        ],
+        tiebreakers: [triples.first, ..._kickers(ranks, triples, 2)],
       );
     }
 
     if (pairs.length >= 2) {
-      final topPairs = pairs.take(2).toList();
       return PokerHandResult(
         name: 'Dois pares',
         category: 2,
-        tiebreakers: [...topPairs, _kickers(ranks, topPairs, 1).first],
+        tiebreakers: [pairs[0], pairs[1], ..._kickers(ranks, pairs, 1)],
       );
     }
 
@@ -119,10 +134,7 @@ class PokerHandEvaluator {
       return PokerHandResult(
         name: 'Par',
         category: 1,
-        tiebreakers: [
-          pairs.first,
-          ..._kickers(ranks, [pairs.first], 3),
-        ],
+        tiebreakers: [pairs.first, ..._kickers(ranks, pairs, 3)],
       );
     }
 
@@ -133,44 +145,15 @@ class PokerHandEvaluator {
     );
   }
 
-  List<PlayingCard>? _flushCards(List<PlayingCard> cards) {
-    final bySuit = <String, List<PlayingCard>>{};
-    for (final card in cards) {
-      bySuit.putIfAbsent(card.suit, () => []).add(card);
-    }
-
-    for (final suitCards in bySuit.values) {
-      if (suitCards.length >= 5) {
-        return suitCards;
-      }
-    }
-    return null;
-  }
-
   int? _straightHigh(List<int> ranks) {
-    final unique = ranks.toSet().toList()..sort((a, b) => b.compareTo(a));
-    if (unique.contains(14) &&
-        unique.contains(5) &&
-        unique.contains(4) &&
-        unique.contains(3) &&
-        unique.contains(2)) {
-      return 5;
-    }
-    if (unique.contains(14)) {
-      unique.add(1);
-    }
-
-    var run = 1;
-    for (var i = 1; i < unique.length; i++) {
-      if (unique[i - 1] - unique[i] == 1) {
-        run++;
-        if (run == 5) {
-          return unique[i - 4];
-        }
-      } else {
-        run = 1;
+    final unique = ranks.toSet();
+    for (var high = 14; high >= 5; high--) {
+      if (List<int>.generate(5, (index) => high - index)
+          .every(unique.contains)) {
+        return high;
       }
     }
+    if ({14, 2, 3, 4, 5}.every(unique.contains)) return 5;
     return null;
   }
 

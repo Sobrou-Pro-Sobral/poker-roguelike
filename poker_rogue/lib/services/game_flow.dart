@@ -7,9 +7,20 @@ Future<GameState> createTableGame({
   required RunState run,
   required DeckApiService deckApi,
 }) async {
+  if (run.isTerminal || run.currentTable < 1 || run.currentTable > RunState.maxTables) {
+    throw const GameFlowException('A run não pode iniciar uma nova mesa.');
+  }
+
+  final contribution = run.currentTable == 3 ? 12 : 6;
+  if (run.playerChips < contribution) {
+    throw const GameFlowException('Fichas insuficientes para iniciar esta mesa.');
+  }
+
   final deckId = await deckApi.createShuffledDeck();
   final draw = await deckApi.drawCards(deckId, 4);
-  final contribution = run.currentTable == 3 ? 12 : 6;
+  if (draw.cards.length != 4) {
+    throw const GameFlowException('A API não retornou as quatro cartas iniciais.');
+  }
 
   return GameState(
     deckId: deckId,
@@ -29,4 +40,13 @@ Future<GameState> createTableGame({
     run: run,
     initialContribution: contribution,
   );
+}
+
+class GameFlowException implements Exception {
+  const GameFlowException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }

@@ -28,17 +28,20 @@ class _PokerTableScreenState extends State<PokerTableScreen> {
   GameState get game => widget.game;
 
   Future<void> _pass() async {
-    await _advanceRound();
+    if (_isLoading || !game.canCheck) return;
+    await _advanceRound(action: game.check);
   }
 
   Future<void> _bet() async {
-    if (!game.canBet) return;
-    game.placeBet();
-    await _advanceRound();
+    if (_isLoading || !game.canBet) return;
+    await _advanceRound(action: game.placeBet);
   }
 
-  Future<void> _advanceRound() async {
+  Future<void> _advanceRound({required bool Function() action}) async {
+    if (_isLoading || game.resolved) return;
     if (game.round == PokerRound.river) {
+      if (!action()) return;
+      game.closeBettingRound();
       _showdown();
       return;
     }
@@ -51,11 +54,13 @@ class _PokerTableScreenState extends State<PokerTableScreen> {
     try {
       final drawCount = game.round == PokerRound.preFlop ? 3 : 1;
       final draw = await widget.deckApi.drawCards(game.deckId, drawCount);
+      if (!action()) return;
 
       if (!mounted) return;
       setState(() {
         game.communityCards.addAll(draw.cards);
         game.remainingCards = draw.remaining;
+        game.closeBettingRound();
         game.round = switch (game.round) {
           PokerRound.preFlop => PokerRound.flop,
           PokerRound.flop => PokerRound.turn,
@@ -72,6 +77,7 @@ class _PokerTableScreenState extends State<PokerTableScreen> {
   }
 
   void _fold() {
+    if (_isLoading || game.resolved) return;
     game.settle(folded: true);
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -105,7 +111,10 @@ class _PokerTableScreenState extends State<PokerTableScreen> {
               _Stats(game: game),
               if (_error != null) ...[
                 const SizedBox(height: 10),
-                _ErrorBox(message: _error!, onRetry: _advanceRound),
+                _ErrorBox(
+                  message: _error!,
+                  onRetry: () => _pass(),
+                ),
               ],
               const SizedBox(height: 12),
               _OpponentArea(game: game),
@@ -115,11 +124,11 @@ class _PokerTableScreenState extends State<PokerTableScreen> {
               _PlayerArea(cards: game.player.hand, stack: game.player.stack),
               const SizedBox(height: 12),
               _Actions(
-                game: game,
-                isLoading: _isLoading,
-                onBet: _bet,
-                onPass: _pass,
-                onFold: _fold,
+        game: game,
+        isLoading: _isLoading,
+        onBet: _bet,
+        onPass: _pass,
+        onFold: _fold,
               ),
             ],
           ),
@@ -386,7 +395,7 @@ class _Actions extends StatelessWidget {
             Expanded(
               child: ActionButton(
                 label: 'Passar',
-                onPressed: isLoading ? null : onPass,
+                onPressed: isLoading || !game.canCheck ? null : onPass,
               ),
             ),
             const SizedBox(width: 8),
