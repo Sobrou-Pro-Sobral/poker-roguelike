@@ -168,7 +168,7 @@ class _ShowdownScreenState extends State<ShowdownScreen> {
                     const SizedBox(height: 22),
                     _HandSummary(
                       label: 'Sua mão',
-                      result: game.wasFolded
+                      result: game.wasFolded || game.opponentFolded
                           ? 'Mão encerrada por fold'
                           : _playerResult.name,
                       cards: game.player.hand,
@@ -176,11 +176,11 @@ class _ShowdownScreenState extends State<ShowdownScreen> {
                     const SizedBox(height: 14),
                     _HandSummary(
                       label: 'Mão do rival',
-                      result: game.wasFolded
+                      result: game.wasFolded || game.opponentFolded
                           ? 'Mão não revelada'
                           : _opponentResult.name,
                       cards: game.opponent.hand,
-                      hidden: game.wasFolded,
+                      hidden: game.wasFolded || game.opponentFolded,
                     ),
                     const SizedBox(height: 18),
                     const Text(

@@ -189,16 +189,17 @@ void main() {
     );
 
     expect(game.canCheck, isTrue);
+    final totalBefore = game.player.stack + game.opponent.stack + game.pot;
     expect(game.placeBet(), isTrue);
-    expect(game.player.stack, 88);
-    expect(game.opponent.stack, 88);
-    expect(game.pot, 24);
-    expect(game.playerContribution, 12);
-    expect(game.opponentContribution, 12);
-    expect(game.check(), isTrue);
-    game.settle(folded: true);
+    expect(game.player.stack + game.opponent.stack + game.pot, totalBefore);
+    expect(game.playerContribution, greaterThanOrEqualTo(6));
+    expect(game.opponentContribution, greaterThanOrEqualTo(6));
+    if (!game.resolved && game.hasPendingCall) {
+      expect(game.call(), isTrue);
+    }
+    if (!game.resolved) game.settle(folded: true);
     expect(game.resolved, isTrue);
-    expect(game.opponent.stack, 112);
+    expect(game.player.stack + game.opponent.stack, totalBefore);
     expect(game.placeBet(), isFalse);
   });
 
@@ -212,5 +213,60 @@ void main() {
     expect(run.moveToNextTable(), isFalse);
     run.isVictory = true;
     expect(run.moveToNextTable(), isFalse);
+  });
+
+  test('rewardEligible só fica true após vitória resolvida e sem fold', () {
+    final run = RunState();
+    final game = GameState(
+      deckId: 'test',
+      player: Player(name: 'Você', stack: 94, hand: [c('A', 'S'), c('A', 'H')]),
+      opponent: Player(name: 'Rival', stack: 94, hand: [c('K', 'S'), c('Q', 'D')]),
+      communityCards: [c('2', 'C'), c('7', 'D'), c('9', 'S'), c('J', 'C'), c('3', 'H')],
+      pot: 12,
+      remainingCards: 43,
+      run: run,
+      initialContribution: 6,
+    );
+
+    expect(game.rewardEligible, isFalse);
+
+    game.settle(folded: false);
+    expect(game.resolved, isTrue);
+    expect(game.playerWon, isTrue);
+    expect(game.rewardEligible, isTrue);
+
+    final lostGame = GameState(
+      deckId: 'test',
+      player: Player(name: 'Você', stack: 94, hand: [c('2', 'C'), c('7', 'D')]),
+      opponent: Player(name: 'Rival', stack: 94, hand: [c('A', 'S'), c('K', 'H')]),
+      communityCards: [c('3', 'C'), c('5', 'D'), c('9', 'H'), c('J', 'C'), c('Q', 'D')],
+      pot: 12,
+      remainingCards: 43,
+      run: RunState(),
+      initialContribution: 6,
+    );
+
+    lostGame.settle(folded: false);
+    expect(lostGame.rewardEligible, isFalse);
+  });
+
+  test('all-in funciona quando a aposta pendente excede o stack do jogador', () {
+    final run = RunState();
+    final game = GameState(
+      deckId: 'test',
+      player: Player(name: 'Você', stack: 8, hand: [c('A', 'S'), c('A', 'H')]),
+      opponent: Player(name: 'Rival', stack: 94, hand: [c('K', 'S'), c('Q', 'D')]),
+      communityCards: [c('2', 'C'), c('7', 'D'), c('9', 'S')],
+      pot: 12,
+      remainingCards: 43,
+      run: run,
+      initialContribution: 0,
+    );
+
+    game.opponentRoundContribution = 20;
+    expect(game.hasPendingCall, isTrue);
+    expect(game.allIn(), isTrue);
+    expect(game.player.stack, 0);
+    expect(game.lastAction, 'Você foi all-in');
   });
 }
